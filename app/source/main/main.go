@@ -7,8 +7,9 @@ import (
 )
 
 func main() {
-	rdb := storage.NewRedis("localhost:6379", "", 0)
-	rdb.Connect()
-	rdb.SetValue("key", "123")
-	fmt.Println(rdb.GetValue("key"))
+	db := storage.New("localhost", "somethinglongpassword123", 6379, 16)
+	db.Connect()
+	db.SetValue("key1", "1234")
+	fmt.Println(db.GetValue("key1"))
+	db.Disconnect()
 }
