@@ -2,10 +2,11 @@ package redisgo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
-	"log"
-
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 var ctx = context.Background()
@@ -15,55 +16,72 @@ type RedisDB struct {
 	Password string
 	DBnum    int
 	Client   *redis.Client
+	Logger   *zap.Logger
 }
 
-func NewRedis(addr, pass string, port, DBnum int) *RedisDB {
+func NewRedis(addr, pass string, port, DBnum int, logger *zap.Logger) *RedisDB {
 	if DBnum < 0 {
 		DBnum = 0
 	}
 	addr += fmt.Sprintf(":%d", port)
-	return &RedisDB{
+	db := &RedisDB{
 		Addr:     addr,
 		Password: pass,
 		DBnum:    DBnum,
+		Logger:   logger,
 	}
+	err := db.Connect()
+	if err != nil {
+		db.Logger.Fatal("Cannot connect to the database", zap.Error(err))
+	}
+	db.Logger.Info("Connected to the database")
+	return db
 }
 
-func (db *RedisDB) Connect() {
+func (db *RedisDB) Connect() error {
 	db.Client = redis.NewClient(&redis.Options{
 		Addr:     db.Addr,
 		Password: db.Password,
 		DB:       db.DBnum,
 		// TLSConfig: &tls.Config{}, // Здесь добавлять сертификаты
 	})
-	log.Print("Connecting to the database")
+	return nil
 }
 
-func (db *RedisDB) Disconnect() {
-	log.Print("Disconnecting")
-	db.Client.Conn().Close()
+func (db *RedisDB) Disconnect() error {
+	db.Logger.Warn("Disconnecting from database")
+	err := db.Client.Conn().Close()
+	if err == nil {
+		return err
+	}
+	return nil
 }
 
-func (db *RedisDB) SetValue(key, value string) {
+func (db *RedisDB) SetValue(key, value string) error {
 	res, err := db.Client.Set(ctx, key, value, 0).Result()
-	log.Print("Setting value status:", res)
+	db.Logger.Info("Setting value from DB", zap.String("status", res))
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
+	return nil
 }
 
-func (db *RedisDB) GetValue(key string) string {
+func (db *RedisDB) GetValue(key string) (string, error) {
 	val, err := db.Client.Get(ctx, key).Result()
-	if err != nil {
-		log.Panic(err)
+	db.Logger.Info("Getting value from DB", zap.String("key", key))
+	if errors.Is(err, redis.Nil) {
+		return "", sql.ErrNoRows
+	} else if err != nil {
+		return "", err
 	}
-	return val
+	return val, nil
 }
 
-func (db *RedisDB) Delete(keys []string) {
+func (db *RedisDB) Delete(keys []string) error {
 	status, err := db.Client.Del(ctx, keys...).Result()
-	log.Print("Deleting status:", status)
+	db.Logger.Info("Deleting key-value from DB", zap.Int("status", int(status)))
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
+	return nil
 }
